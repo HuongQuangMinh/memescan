@@ -4,133 +4,139 @@
 // =============================================
 
 const API_BASE = 'https://api.dexscreener.com';
-const REFRESH_INTERVAL = 60000; // 60 giây
+const REFRESH_INTERVAL = 60000;
+const CACHE_KEY = 'memescan_cache_v2';
+const CACHE_TTL = 45000; // 45 giây
 
 let allTokens = [];
+let tokensSeen = new Set(); // theo dõi pair đã hiển
 let watchlist = JSON.parse(localStorage.getItem('memescan_watchlist') || '[]');
 let currentChain = 'all';
 let refreshTimer = null;
+let isLoading = false;
 
 // =============================================
-// FETCH DATA — Song song, nhanh hơn 4x
+// CACHE
+// =============================================
+
+function loadCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const { data, ts } = JSON.parse(raw);
+    if (Date.now() - ts > CACHE_TTL) return null;
+    return data;
+  } catch { return null; }
+}
+
+function saveCache(tokens) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      data: tokens.slice(0, 120),
+      ts: Date.now(),
+    }));
+  } catch {}
+}
+
+// =============================================
+// FETCH DATA — Progressive, hiện ngay từng batch
 // =============================================
 
 async function loadTokens() {
-  setLoading(true);
+  if (isLoading) return;
+  isLoading = true;
   hideError();
 
-  // Định nghĩa tất cả queries theo từng chain
-  const searchQueries = [
-    // Chung
-    'meme', 'pepe', 'moon', 'ai',
-    // BSC specific
-    'bsc meme', 'bnb dog',
-    // ETH specific  
-    'eth meme', 'erc20 inu',
-    // Base specific
-    'base meme', 'base dog',
-    // Solana specific
-    'sol meme', 'sol cat',
-  ];
-
-  try {
-    // Bước 1: Fetch tất cả song song (không có await lồng nhau)
-    const [boostsRes, profilesRes, ...searchResults] = await Promise.all([
-      fetchJson(`${API_BASE}/token-boosts/latest/v1`),
-      fetchJson(`${API_BASE}/token-profiles/latest/v1`),
-      ...searchQueries.map(q =>
-        fetchJson(`${API_BASE}/latest/dex/search?q=${encodeURIComponent(q)}`)
-      ),
-    ]);
-
-    const pairs = [];
-
-    // Xử lý search results
-    for (const data of searchResults) {
-      if (data?.pairs) pairs.push(...data.pairs);
-    }
-
-    // Xử lý token boosts — batch fetch (parallel, tối đa 15 token)
-    const boostList = Array.isArray(boostsRes)
-      ? boostsRes.slice(0, 15)
-      : [];
-    const profileList = Array.isArray(profilesRes)
-      ? profilesRes.slice(0, 10)
-      : [];
-    const allBoosts = [...boostList, ...profileList].filter(
-      t => t.tokenAddress && t.chainId
-    );
-
-    if (allBoosts.length > 0) {
-      const boostPairs = await Promise.all(
-        allBoosts.map(t =>
-          fetchJson(`${API_BASE}/latest/dex/tokens/${t.tokenAddress}`)
-            .then(r => r?.pairs || [])
-            .catch(() => [])
-        )
-      );
-      for (const arr of boostPairs) pairs.push(...arr);
-    }
-
-    // Loại trùng
-    const seen = new Set();
-    const unique = pairs.filter(p => {
-      if (!p?.pairAddress || seen.has(p.pairAddress)) return false;
-      seen.add(p.pairAddress);
-      return true;
-    });
-
-    allTokens = unique.map(parsePair).filter(Boolean);
+  // Bước 1: Hiện cache NGAY LẬP TỨC (0ms)
+  const cached = loadCache();
+  if (cached && cached.length > 0) {
+    allTokens = cached;
+    tokensSeen = new Set(cached.map(t => t.pairAddress));
     renderTokens();
     updateStats();
-    updateLastUpdate();
-
-  } catch (err) {
-    console.error('Lỗi tải:', err);
-    showError();
-  } finally {
-    setLoading(false);
-  }
-}
-
-// Tìm kiếm theo contract address
-async function searchByContract(address) {
-  address = address.trim();
-  if (!address || address.length < 20) {
-    showToast('⚠️ Vui lòng dán địa chỉ hợp lệ!');
-    return;
+    // Không hiện spinner nếu đã có cache
+    showToast('⚡ Đang cập nhật dữ liệu mới...');
+  } else {
+    setLoading(true);
   }
 
-  setLoading(true);
-  hideError();
-  showToast('🔍 Đang tìm token...');
+  // Bước 2: Queries ưu tiên (load nhanh nhất)
+  const fastQueries = [
+    'meme', 'pepe', 'dog', 'sol meme', 'bnb meme',
+  ];
+
+  // Bước 3: Queries phụ (load sau, bổ sung thêm)
+  const slowQueries = [
+    'moon', 'ai', 'inu', 'eth meme', 'base meme',
+    'sol cat', 'baby', 'erc20 inu',
+  ];
+
+  // Hàm merge token mới vào danh sách và render ngay
+  let newCount = 0;
+  const mergeAndRender = (pairs) => {
+    const fresh = pairs
+      .map(parsePair)
+      .filter(t => t && !tokensSeen.has(t.pairAddress));
+    if (fresh.length === 0) return;
+    fresh.forEach(t => tokensSeen.add(t.pairAddress));
+    allTokens = [...allTokens, ...fresh];
+    newCount += fresh.length;
+    renderTokens();
+    updateStats();
+    setLoading(false); // Tắt spinner sau batch đầu tiên
+  };
 
   try {
-    const data = await fetchJson(`${API_BASE}/latest/dex/tokens/${address}`);
-    if (!data?.pairs?.length) {
-      showToast('❌ Không tìm thấy token này!');
-      setLoading(false);
-      return;
-    }
-    // Hiển thị kết quả ngay trên grid
-    const found = data.pairs.map(parsePair).filter(Boolean);
-    const grid = document.getElementById('token-grid');
-    const emptyState = document.getElementById('empty-state');
-    grid.innerHTML = '';
-    emptyState.style.display = 'none';
-    found.forEach((t, i) => grid.appendChild(buildTokenCard(t, i)));
-    document.getElementById('total-count').textContent = found.length;
-    showToast(`✅ Tìm thấy ${found.length} cặp giao dịch!`);
-  } catch {
-    showToast('❌ Lỗi kết nối, thử lại!');
+    // Fast queries — chạy song song, mỗi cái xong là render ngay
+    await Promise.all(
+      fastQueries.map(q =>
+        fetchJson(`${API_BASE}/latest/dex/search?q=${encodeURIComponent(q)}`)
+          .then(d => { if (d?.pairs) mergeAndRender(d.pairs); })
+          .catch(() => {})
+      )
+    );
+
+    // Slow queries — bổ sung thêm, không block UI
+    Promise.all(
+      slowQueries.map(q =>
+        fetchJson(`${API_BASE}/latest/dex/search?q=${encodeURIComponent(q)}`)
+          .then(d => { if (d?.pairs) mergeAndRender(d.pairs); })
+          .catch(() => {})
+      )
+    ).then(() => {
+      // Token boosts — fetch song song sau cùng (không block)
+      fetchJson(`${API_BASE}/token-boosts/latest/v1`).then(async boosts => {
+        if (!Array.isArray(boosts)) return;
+        const top = boosts.slice(0, 12);
+        const results = await Promise.all(
+          top.map(t =>
+            fetchJson(`${API_BASE}/latest/dex/tokens/${t.tokenAddress}`)
+              .then(r => r?.pairs || [])
+              .catch(() => [])
+          )
+        );
+        const allPairs = results.flat();
+        if (allPairs.length) mergeAndRender(allPairs);
+        saveCache(allTokens);
+        updateLastUpdate();
+        if (newCount > 0) showToast(`✅ +${newCount} token mới!`);
+      }).catch(() => {});
+    });
+
+  } catch (err) {
+    console.error('Lỗi:', err);
+    if (!cached) showError();
   } finally {
+    isLoading = false;
     setLoading(false);
+    saveCache(allTokens);
+    updateLastUpdate();
   }
 }
 
 async function fetchJson(url) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), 5000); // 5s timeout
   try {
     const res = await fetch(url, {
       signal: controller.signal,
@@ -145,6 +151,34 @@ async function fetchJson(url) {
   }
 }
 
+// Tìm theo contract address — hiện ngay lập tức
+async function searchByContract(address) {
+  address = address.trim();
+  if (!address || address.length < 20) {
+    showToast('⚠️ Vui lòng dán địa chỉ hợp lệ!');
+    return;
+  }
+  showToast('🔍 Đang tìm token...');
+  setLoading(true);
+  try {
+    const data = await fetchJson(`${API_BASE}/latest/dex/tokens/${address}`);
+    if (!data?.pairs?.length) {
+      showToast('❌ Không tìm thấy token này!');
+      return;
+    }
+    const found = data.pairs.map(parsePair).filter(Boolean);
+    const grid = document.getElementById('token-grid');
+    document.getElementById('empty-state').style.display = 'none';
+    grid.innerHTML = '';
+    found.forEach((t, i) => grid.appendChild(buildTokenCard(t, i)));
+    document.getElementById('total-count').textContent = found.length;
+    showToast(`✅ Tìm thấy ${found.length} cặp giao dịch!`);
+  } catch {
+    showToast('❌ Lỗi kết nối, thử lại!');
+  } finally {
+    setLoading(false);
+  }
+}
 
 // =============================================
 // PARSE PAIR DATA
