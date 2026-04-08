@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🔍 MemeScan – Quét Token Mới Realtime</title>
+  <meta name="description" content="Công cụ quét memecoin mới trên DEX theo thời gian thực. Lọc theo thanh khoản, volume, tuổi token. Dành cho trader crypto Việt Nam." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">MemeScan</span>
+        <span class="logo-badge">BETA</span>
+      </div>
+      <div class="header-stats">
+        <div class="stat-pill" id="stat-total">
+          <span class="stat-dot green"></span>
+          <span id="total-count">0</span> tokens
+        </div>
+        <div class="stat-pill" id="stat-refresh">
+          <span class="stat-dot yellow pulsing"></span>
+          Live
+        </div>
+        <div class="stat-pill">
+          <span id="last-update-text">Chưa cập nhật</span>
+        </div>
+      </div>
+      <button class="btn-refresh" id="btn-refresh" title="Làm mới">
+        <span id="refresh-icon">↻</span> Làm mới
+      </button>
+    </div>
+  </header>
+
+  <!-- Filters -->
+  <div class="filters-bar">
+    <div class="filters-inner">
+      <!-- Chain selector -->
+      <div class="filter-group">
+        <label class="filter-label">⛓ Chain</label>
+        <div class="chain-buttons" id="chain-buttons">
+          <button class="chain-btn active" data-chain="all">Tất cả</button>
+          <button class="chain-btn" data-chain="solana">Solana</button>
+          <button class="chain-btn" data-chain="bsc">BSC</button>
+          <button class="chain-btn" data-chain="ethereum">Ethereum</button>
+          <button class="chain-btn" data-chain="base">Base</button>
+        </div>
+      </div>
+
+      <!-- Min Liquidity -->
+      <div class="filter-group">
+        <label class="filter-label">💧 Thanh khoản tối thiểu</label>
+        <select class="filter-select" id="filter-liquidity">
+          <option value="0">Tất cả</option>
+          <option value="5000">$5K+</option>
+          <option value="10000" selected>$10K+</option>
+          <option value="50000">$50K+</option>
+          <option value="100000">$100K+</option>
+        </select>
+      </div>
+
+      <!-- Max Age -->
+      <div class="filter-group">
+        <label class="filter-label">⏱ Tuổi token</label>
+        <select class="filter-select" id="filter-age">
+          <option value="1">< 1 giờ</option>
+          <option value="6" selected>< 6 giờ</option>
+          <option value="24">< 24 giờ</option>
+          <option value="72">< 3 ngày</option>
+          <option value="999">Tất cả</option>
+        </select>
+      </div>
+
+      <!-- Min Volume -->
+      <div class="filter-group">
+        <label class="filter-label">📊 Volume 24h</label>
+        <select class="filter-select" id="filter-volume">
+          <option value="0">Tất cả</option>
+          <option value="1000">$1K+</option>
+          <option value="10000" selected>$10K+</option>
+          <option value="100000">$100K+</option>
+        </select>
+      </div>
+
+      <!-- Sort -->
+      <div class="filter-group">
+        <label class="filter-label">🔃 Sắp xếp</label>
+        <select class="filter-select" id="filter-sort">
+          <option value="age">Mới nhất</option>
+          <option value="liquidity">Thanh khoản</option>
+          <option value="volume">Volume</option>
+          <option value="priceChange">Tăng giá</option>
+        </select>
+      </div>
+
+      <button class="btn-apply" id="btn-apply">✓ Áp dụng</button>
+    </div>
+  </div>
+
+  <!-- Safety Legend -->
+  <div class="legend-bar">
+    <span class="legend-title">Điểm an toàn:</span>
+    <span class="score-badge score-high">🟢 Cao (70+)</span>
+    <span class="score-badge score-mid">🟡 Trung bình (40–69)</span>
+    <span class="score-badge score-low">🔴 Thấp (&lt;40)</span>
+    <span class="legend-sep">|</span>
+    <span class="legend-tip">💡 Click card để xem DexScreener</span>
+  </div>
+
+  <!-- Main content -->
+  <main class="main">
+    <!-- Loading -->
+    <div id="loading" class="loading-overlay">
+      <div class="loader-wrap">
+        <div class="spinner"></div>
+        <p class="loading-text">Đang quét token mới...</p>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div id="error-msg" class="error-banner" style="display:none">
+      <span>⚠️ Không thể tải dữ liệu. Kiểm tra kết nối mạng.</span>
+      <button onclick="loadTokens()">Thử lại</button>
+    </div>
+
+    <!-- Token grid -->
+    <div class="token-grid" id="token-grid"></div>
+
+    <!-- Empty state -->
+    <div id="empty-state" class="empty-state" style="display:none">
+      <div class="empty-icon">🔍</div>
+      <h3>Không tìm thấy token nào</h3>
+      <p>Thử nới lỏng bộ lọc hoặc chọn chain khác</p>
+    </div>
+  </main>
+
+  <!-- Watchlist sidebar toggle -->
+  <button class="watchlist-fab" id="watchlist-fab" title="Danh sách theo dõi">
+    ⭐ <span id="watchlist-count">0</span>
+  </button>
+
+  <!-- Watchlist panel -->
+  <div class="watchlist-panel" id="watchlist-panel">
+    <div class="watchlist-header">
+      <h3>⭐ Theo dõi</h3>
+      <button class="close-btn" id="close-watchlist">✕</button>
+    </div>
+    <div class="watchlist-body" id="watchlist-body">
+      <p class="empty-watchlist">Chưa có token nào. Nhấn ⭐ trên card để thêm.</p>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
