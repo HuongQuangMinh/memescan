@@ -272,6 +272,7 @@ function buildTokenCard(token, index) {
       </div>
       <div class="card-actions">
         <span class="chain-tag ${chainClass}">${token.chain.toUpperCase()}</span>
+        <button class="swap-btn" data-pair="${token.pairAddress}" title="Swap / Mua token">🔄 Swap</button>
         <button class="star-btn ${isWatched ? 'active' : ''}" data-pair="${token.pairAddress}" title="Theo dõi">⭐</button>
       </div>
     </div>
@@ -311,7 +312,7 @@ function buildTokenCard(token, index) {
 
   // Click card → open DexScreener
   card.addEventListener('click', (e) => {
-    if (e.target.closest('.star-btn')) return;
+    if (e.target.closest('.star-btn') || e.target.closest('.swap-btn')) return;
     window.open(token.dexUrl, '_blank');
   });
 
@@ -320,6 +321,13 @@ function buildTokenCard(token, index) {
   starBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     toggleWatchlist(token, starBtn);
+  });
+
+  // Swap button
+  const swapBtn = card.querySelector('.swap-btn');
+  swapBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openSwapModal(token);
   });
 
   return card;
@@ -481,6 +489,90 @@ document.getElementById('watchlist-fab').addEventListener('click', () => {
 document.getElementById('close-watchlist').addEventListener('click', () => {
   document.getElementById('watchlist-panel').classList.remove('open');
 });
+
+// Swap modal close
+document.getElementById('swap-close').addEventListener('click', closeSwapModal);
+document.getElementById('swap-overlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('swap-overlay')) closeSwapModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSwapModal();
+});
+
+// =============================================
+// SWAP MODAL
+// =============================================
+
+const DEX_CONFIG = {
+  solana: [
+    { name: 'Jupiter', logo: '🌀', color: '#16a34a', getUrl: (addr) => `https://jup.ag/swap/SOL-${addr}` },
+    { name: 'Raydium', logo: '💧', color: '#7c3aed', getUrl: (addr) => `https://raydium.io/swap/?outputCurrency=${addr}` },
+  ],
+  bsc: [
+    { name: 'PancakeSwap', logo: '🥞', color: '#d97706', getUrl: (addr) => `https://pancakeswap.finance/swap?outputCurrency=${addr}` },
+    { name: '1inch BSC', logo: '⚡', color: '#2563eb', getUrl: (addr) => `https://app.1inch.io/#/56/simple/swap/BNB/${addr}` },
+  ],
+  ethereum: [
+    { name: 'Uniswap', logo: '🦄', color: '#db2777', getUrl: (addr) => `https://app.uniswap.org/swap?outputCurrency=${addr}&chain=mainnet` },
+    { name: '1inch ETH', logo: '⚡', color: '#2563eb', getUrl: (addr) => `https://app.1inch.io/#/1/simple/swap/ETH/${addr}` },
+  ],
+  base: [
+    { name: 'Uniswap Base', logo: '🔵', color: '#2563eb', getUrl: (addr) => `https://app.uniswap.org/swap?outputCurrency=${addr}&chain=base` },
+    { name: 'Aerodrome', logo: '✈️', color: '#7c3aed', getUrl: (addr) => `https://aerodrome.finance/swap?to=${addr}` },
+  ],
+};
+
+function openSwapModal(token) {
+  // Fill token info
+  const avatar = document.getElementById('swap-avatar');
+  if (token.imgUrl) {
+    avatar.innerHTML = `<img src="${token.imgUrl}" onerror="this.parentElement.textContent='${token.symbol.charAt(0)}'">`;
+  } else {
+    avatar.textContent = token.symbol.charAt(0).toUpperCase();
+  }
+  document.getElementById('swap-name').textContent = token.name;
+  document.getElementById('swap-symbol').textContent = `$${token.symbol} • ${token.chain.toUpperCase()}`;
+  document.getElementById('swap-price').textContent = formatPrice(token.priceUsd);
+
+  const changeEl = document.getElementById('swap-change');
+  const sign = token.priceChange24h > 0 ? '+' : '';
+  changeEl.textContent = `${sign}${token.priceChange24h.toFixed(2)}%`;
+  changeEl.className = 'swap-change ' + (token.priceChange24h > 0 ? 'up' : token.priceChange24h < 0 ? 'down' : '');
+
+  // DexScreener link
+  document.getElementById('swap-dexscreener').href = token.dexUrl;
+
+  // Copy address
+  const copyBtn = document.getElementById('swap-copy-addr');
+  copyBtn.onclick = () => {
+    navigator.clipboard.writeText(token.address).then(() => {
+      showToast('📋 Đã copy địa chỉ token!');
+    });
+  };
+
+  // DEX buttons
+  const grid = document.getElementById('swap-dex-grid');
+  const dexList = DEX_CONFIG[token.chain] || [
+    { name: 'DexScreener', logo: '📊', color: '#6366f1', getUrl: () => token.dexUrl }
+  ];
+
+  grid.innerHTML = dexList.map(dex => `
+    <a href="${dex.getUrl(token.address)}" target="_blank" class="dex-btn" style="--dex-color:${dex.color}">
+      <span class="dex-logo">${dex.logo}</span>
+      <span class="dex-name">${dex.name}</span>
+      <span class="dex-arrow">→</span>
+    </a>
+  `).join('');
+
+  // Show modal
+  document.getElementById('swap-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSwapModal() {
+  document.getElementById('swap-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
 
 // =============================================
 // INIT
