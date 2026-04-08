@@ -109,7 +109,7 @@
     <span class="score-badge score-mid">🟡 Trung bình (40–69)</span>
     <span class="score-badge score-low">🔴 Thấp (&lt;40)</span>
     <span class="legend-sep">|</span>
-    <span class="legend-tip">💡 Click card để xem DexScreener</span>
+    <span class="legend-tip">💡 Click card để xem chi tiết • 🔄 Swap để mua ngay</span>
   </div>
 
   <!-- Main content -->
@@ -157,6 +157,41 @@
 
   <!-- Toast -->
   <div id="toast" class="toast"></div>
+
+  <!-- Swap Modal -->
+  <div class="swap-overlay" id="swap-overlay">
+    <div class="swap-modal" id="swap-modal">
+      <div class="swap-modal-header">
+        <div class="swap-token-info">
+          <div class="swap-token-avatar" id="swap-avatar"></div>
+          <div>
+            <div class="swap-token-name" id="swap-name"></div>
+            <div class="swap-token-symbol" id="swap-symbol"></div>
+          </div>
+        </div>
+        <button class="swap-close-btn" id="swap-close">✕</button>
+      </div>
+
+      <div class="swap-price-row">
+        <span class="swap-label">Giá hiện tại:</span>
+        <span class="swap-price-val" id="swap-price"></span>
+        <span class="swap-change" id="swap-change"></span>
+      </div>
+
+      <div class="swap-dex-label">🔄 Chọn DEX để swap:</div>
+
+      <div class="swap-dex-grid" id="swap-dex-grid"></div>
+
+      <div class="swap-warning">
+        ⚠️ <strong>Lưu ý rủi ro:</strong> Memecoin rủi ro cao. Chỉ đầu tư số tiền bạn sẵn sàng mất. DYOR!
+      </div>
+
+      <div class="swap-links-row">
+        <a class="swap-link-btn" id="swap-dexscreener" target="_blank">📊 DexScreener</a>
+        <a class="swap-link-btn secondary" id="swap-copy-addr">📋 Copy địa chỉ</a>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
