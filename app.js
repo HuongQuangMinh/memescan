@@ -588,13 +588,21 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeSwapModal();
 });
 
-// =============================================
-// SWAP MODAL
-// =============================================
+// ĐỊA CHỈ VÍ NHẬN PHÍ REFERRAL (Jupiter Referral Account — điền sau khi đăng ký)
+// Wallet: FtYymX3WrnCb2ZmL2LZorucdXSsYHNNf9j7QqUod3WJy
+const REFERRAL_ACCOUNT = ''; // <-- điền referral token account sau khi đăng ký tại referral.jup.ag
+const FEE_BPS = 50; // 0.5% phí referral
 
 const DEX_CONFIG = {
   solana: [
-    { name: 'Jupiter', logo: '🌀', color: '#16a34a', getUrl: (addr) => `https://jup.ag/swap/SOL-${addr}` },
+    {
+      name: 'Jupiter (Swap ngay)',
+      logo: '🌀',
+      color: '#16a34a',
+      // Dùng Jupiter Terminal nhúng trực tiếp nếu có, nếu không thì mở link
+      action: 'jupiter_terminal',
+      getUrl: (addr) => `https://jup.ag/swap/SOL-${addr}`,
+    },
     { name: 'Raydium', logo: '💧', color: '#7c3aed', getUrl: (addr) => `https://raydium.io/swap/?outputCurrency=${addr}` },
   ],
   bsc: [
@@ -610,6 +618,32 @@ const DEX_CONFIG = {
     { name: 'Aerodrome', logo: '✈️', color: '#7c3aed', getUrl: (addr) => `https://aerodrome.finance/swap?to=${addr}` },
   ],
 };
+
+// Mở Jupiter Terminal widget nhúng trong app (Solana)
+function openJupiterTerminal(tokenMint) {
+  if (typeof window.Jupiter === 'undefined') {
+    // Fallback nếu script chưa load
+    window.open(`https://jup.ag/swap/SOL-${tokenMint}`, '_blank');
+    return;
+  }
+  const config = {
+    displayMode: 'modal',
+    integratedTargetId: 'jupiter-terminal-container',
+    defaultExplorer: 'Solana Explorer',
+    formProps: {
+      initialInputMint: 'So11111111111111111111111111111111111111112', // SOL
+      initialOutputMint: tokenMint,
+      fixedOutputMint: true,
+    },
+  };
+  // Thêm referral nếu đã đăng ký
+  if (REFERRAL_ACCOUNT) {
+    config.referralAccount = REFERRAL_ACCOUNT;
+    config.feeBps = FEE_BPS;
+  }
+  window.Jupiter.init(config);
+}
+
 
 function openSwapModal(token) {
   // Fill token info
@@ -645,13 +679,27 @@ function openSwapModal(token) {
     { name: 'DexScreener', logo: '📊', color: '#6366f1', getUrl: () => token.dexUrl }
   ];
 
-  grid.innerHTML = dexList.map(dex => `
-    <a href="${dex.getUrl(token.address)}" target="_blank" class="dex-btn" style="--dex-color:${dex.color}">
-      <span class="dex-logo">${dex.logo}</span>
-      <span class="dex-name">${dex.name}</span>
-      <span class="dex-arrow">→</span>
-    </a>
-  `).join('');
+  grid.innerHTML = '';
+  dexList.forEach(dex => {
+    const el = document.createElement('a');
+    el.className = 'dex-btn';
+    el.style.cssText = `--dex-color:${dex.color}`;
+    el.innerHTML = `<span class="dex-logo">${dex.logo}</span><span class="dex-name">${dex.name}</span><span class="dex-arrow">→</span>`;
+
+    if (dex.action === 'jupiter_terminal' && token.chain === 'solana') {
+      // Dùng Jupiter Terminal widget nhúng — mượt hơn, kiếm phí referral
+      el.href = '#';
+      el.addEventListener('click', (e) => {
+        e.preventDefault();
+        closeSwapModal();
+        setTimeout(() => openJupiterTerminal(token.address), 200);
+      });
+    } else {
+      el.href = dex.getUrl(token.address);
+      el.target = '_blank';
+    }
+    grid.appendChild(el);
+  });
 
   // Show modal
   document.getElementById('swap-overlay').classList.add('open');
