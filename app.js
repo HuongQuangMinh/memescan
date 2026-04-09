@@ -54,24 +54,41 @@ async function loadTokens() {
     tokensSeen = new Set(cached.map(t => t.pairAddress));
     renderTokens();
     updateStats();
-    // Không hiện spinner nếu đã có cache
     showToast('⚡ Đang cập nhật dữ liệu mới...');
   } else {
     setLoading(true);
   }
 
-  // Bước 2: Queries ưu tiên (load nhanh nhất)
-  const fastQueries = [
-    'meme', 'pepe', 'dog', 'sol meme', 'bnb meme',
+  // ─── QUERIES ĐA CHAIN ─────────────────────────────
+  // Mỗi chain có query riêng — chạy song song toàn bộ
+
+  const queryMap = {
+    sol:  ['sol meme', 'solana meme', 'sol cat', 'sol dog', 'wif'],
+    bsc:  ['bnb meme', 'bsc meme', 'babydoge', 'floki bnb', 'pancake meme', 'bsc new', 'bsc dog'],
+    eth:  ['pepe eth', 'shib', 'mog', 'wojak', 'erc meme', 'eth dog', 'cult eth'],
+    base: ['brett', 'toshi', 'degen', 'normie', 'higher', 'base meme', 'doginme'],
+    all:  ['meme', 'pepe', 'moon', 'dog', 'cat', 'baby', 'ai'],
+  };
+
+  // Token NỔITIẾNG trên từng chain — fetch thẳng (luôn có data)
+  const KNOWN_TOKENS = [
+    // Base
+    '0x532f27101965dd16442e59d40670faf5ebb142e4', // BRETT
+    '0xac1bd2486aaf3b5c0fc3fd868558b082a531b2b4', // TOSHI
+    '0x4ed4e862060ed641e2b31e9c36ea7e1e39f7a62', // DEGEN
+    '0x0578d8a44db98b23bf096a382e016e29a5ce0ffe', // HIGHER
+    // BSC
+    '0xfb5b838b6cfeedc2873ab27866079ac55363d37',  // FLOKI
+    '0xc748673057861a797275cd8a068abb95a902e8de',  // BABYDOGE
+    '0x0e09fabb73bd3ade0a17ecc321fd13a19e81ce82',  // CAKE
+    // ETH
+    '0x6982508145454ce325ddbe47a25d4ec3d2311933',  // PEPE
+    '0x95ad61b0a150d79219dcf64e1e6cc01f0b64c4ce',  // SHIB
+    '0xaaee1a9723aadb7afa2810263653a34ba2c21c7a',  // MOG
+    '0xcf0c122c6b73ff809c693db761e7baebe62b6a2e',  // FLOKI ETH
   ];
 
-  // Bước 3: Queries phụ (load sau, bổ sung thêm)
-  const slowQueries = [
-    'moon', 'ai', 'inu', 'eth meme', 'base meme',
-    'sol cat', 'baby', 'erc20 inu',
-  ];
-
-  // Hàm merge token mới vào danh sách và render ngay
+  // ─── MERGE & RENDER ───────────────────────────────
   let newCount = 0;
   const mergeAndRender = (pairs) => {
     const fresh = pairs
@@ -83,45 +100,42 @@ async function loadTokens() {
     newCount += fresh.length;
     renderTokens();
     updateStats();
-    setLoading(false); // Tắt spinner sau batch đầu tiên
+    setLoading(false);
   };
 
-  try {
-    // Fast queries — chạy song song, mỗi cái xong là render ngay
-    await Promise.all(
-      fastQueries.map(q =>
-        fetchJson(`${API_BASE}/latest/dex/search?q=${encodeURIComponent(q)}`)
-          .then(d => { if (d?.pairs) mergeAndRender(d.pairs); })
-          .catch(() => {})
-      )
-    );
+  const allQueries = Object.values(queryMap).flat();
 
-    // Slow queries — bổ sung thêm, không block UI
-    Promise.all(
-      slowQueries.map(q =>
+  try {
+    // Wave 1: Tất cả queries chạy song song — mỗi cái xong render ngay
+    await Promise.all([
+      ...allQueries.map(q =>
         fetchJson(`${API_BASE}/latest/dex/search?q=${encodeURIComponent(q)}`)
           .then(d => { if (d?.pairs) mergeAndRender(d.pairs); })
           .catch(() => {})
-      )
-    ).then(() => {
-      // Token boosts — fetch song song sau cùng (không block)
-      fetchJson(`${API_BASE}/token-boosts/latest/v1`).then(async boosts => {
-        if (!Array.isArray(boosts)) return;
-        const top = boosts.slice(0, 12);
-        const results = await Promise.all(
-          top.map(t =>
-            fetchJson(`${API_BASE}/latest/dex/tokens/${t.tokenAddress}`)
-              .then(r => r?.pairs || [])
-              .catch(() => [])
-          )
-        );
-        const allPairs = results.flat();
-        if (allPairs.length) mergeAndRender(allPairs);
-        saveCache(allTokens);
-        updateLastUpdate();
-        if (newCount > 0) showToast(`✅ +${newCount} token mới!`);
-      }).catch(() => {});
-    });
+      ),
+      // Wave 1b: Fetch trực tiếp token nổi tiếng Base/ETH/BSC
+      ...KNOWN_TOKENS.map(addr =>
+        fetchJson(`${API_BASE}/latest/dex/tokens/${addr}`)
+          .then(d => { if (d?.pairs) mergeAndRender(d.pairs); })
+          .catch(() => {})
+      ),
+    ]);
+
+    // Wave 2: Token boosts (chạy sau, không block)
+    fetchJson(`${API_BASE}/token-boosts/latest/v1`).then(async boosts => {
+      if (!Array.isArray(boosts)) return;
+      const results = await Promise.all(
+        boosts.slice(0, 15).map(t =>
+          fetchJson(`${API_BASE}/latest/dex/tokens/${t.tokenAddress}`)
+            .then(r => r?.pairs || []).catch(() => [])
+        )
+      );
+      const allPairs = results.flat();
+      if (allPairs.length) mergeAndRender(allPairs);
+      saveCache(allTokens);
+      updateLastUpdate();
+      if (newCount > 0) showToast(`✅ +${newCount} token mới!`);
+    }).catch(() => {});
 
   } catch (err) {
     console.error('Lỗi:', err);
@@ -133,6 +147,7 @@ async function loadTokens() {
     updateLastUpdate();
   }
 }
+
 
 async function fetchJson(url) {
   const controller = new AbortController();
